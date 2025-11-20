@@ -1,0 +1,76 @@
+:root{
+  --bg:#fafafa;
+  --card:#ffffff;
+  --muted:#777;
+  --primary:#0070c9;
+  --radius:14px;
+  --accent:#e6e6e6;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background:var(--bg);
+  color:#111;
+  -webkit-font-smoothing:antialiased;
+}
+
+.app{
+  max-width:900px;
+  margin:18px auto;
+  padding:12px;
+}
+
+header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:14px;
+}
+h1{margin:0;font-size:20px}
+
+.btn-ghost{
+  background:transparent;border:1px solid var(--accent);padding:8px 12px;border-radius:10px;
+}
+
+.card{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:14px;
+  box-shadow: 0 6px 18px rgba(20,20,20,0.04);
+  margin-bottom:14px;
+}
+
+.now-playing{
+  display:flex;
+  gap:14px;
+  align-items:center;
+}
+
+.now-playing img{
+  width:120px;height:120px;border-radius:8px;object-fit:cover;background:#ddd;
+}
+
+.track-info{flex:1}
+
+.title{font-weight:600;font-size:18px}
+.artist{color:var(--muted);font-size:14px;margin-bottom:8px}
+
+.seek{display:flex;align-items:center;gap:10px;margin:8px 0}
+#seekbar{flex:1;appearance:none;height:6px;background:var(--accent);border-radius:5px;outline:none}
+#seekbar::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:var(--primary);box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+
+.controls{display:flex;gap:10px;align-items:center;margin-top:6px}
+.control{border-radius:50%;padding:12px 14px;border:none;background:#f3f3f3;font-size:16px}
+.control.primary{background:var(--primary);color:white;box-shadow:0 6px 12px rgba(0,112,201,0.18)}
+
+.extras{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:8px 10px;border-radius:10px;border:1px solid var(--accent);background:#fff}
+
+.playlist h2{margin-top:0}
+#playlist{list-style:none;padding:0;margin:8px 0;max-height:320px;overflow:auto}
+#playlist li{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:10px;margin-bottom:8px;background:#fafafa}
+.track-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%}
+.btn-small{background:transparent;border:none;color:var(--muted);font-size:16px;padding:6px}
+.hint{color:var(--muted);font-size:13px;margin:10px 0}

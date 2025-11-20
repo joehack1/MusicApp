@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Apple Music Player</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- jsmediatags for reading ID3 tags -->
+  <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.5/dist/jsmediatags.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>My Music</h1>
+      <button id="btnPick" class="btn-ghost">+ Add</button>
+    </header>
+
+    <section class="now-playing card">
+      <img id="albumArt" src="assets/placeholder.jpg" alt="Album Art" />
+      <div class="track-info">
+        <div id="trackTitle" class="title">No track playing</div>
+        <div id="trackArtist" class="artist">—</div>
+
+        <div class="seek">
+          <span id="elapsed">0:00</span>
+          <input id="seekbar" type="range" min="0" max="100" value="0">
+          <span id="duration">0:00</span>
+        </div>
+
+        <div class="controls">
+          <button id="prev" class="control">⏮</button>
+          <button id="play" class="control primary">▶</button>
+          <button id="pause" class="control">⏸</button>
+          <button id="next" class="control">⏭</button>
+        </div>
+
+        <div class="extras">
+          <button id="shuffle" class="chip">Shuffle</button>
+          <button id="repeat" class="chip">Repeat: Off</button>
+          <button id="saveList" class="chip">Save Playlist</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="playlist card">
+      <h2>Playlist</h2>
+      <ul id="playlist"></ul>
+      <p id="emptyHint" class="hint">Tap + Add to pick audio files from your phone.</p>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

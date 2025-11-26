@@ -46,6 +46,8 @@
       <h2>Playlist</h2>
       <ul id="playlist"></ul>
       <p id="emptyHint" class="hint">Tap + Add to pick audio files from your phone.</p>
+      <!-- Hidden file input used as a browser fallback when cordova fileChooser is unavailable -->
+      <input id="fileInput" type="file" accept="audio/*" multiple style="display:none">
     </section>
   </div>
 

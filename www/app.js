@@ -8,11 +8,17 @@ let isPlaying = false;
 let shuffle = false;
 let repeatMode = 0; // 0=off,1=all,2=one
 
-const $ = id => document.getElementById(id);
+// `$` will be a map of DOM elements by id (populated on init)
+const $ = {};
 
 // --- init ---
 document.addEventListener('deviceready', init);
 function init(){
+  // cache DOM elements used throughout the app
+  ['btnPick','play','pause','next','prev','shuffle','repeat','saveList','seekbar','elapsed','duration','trackTitle','trackArtist','albumArt','playlist','emptyHint','fileInput'].forEach(id => {
+    $[id] = document.getElementById(id);
+  });
+
   // UI bindings
   $.btnPick.addEventListener('click', pickFiles);
   $.play.addEventListener('click', onPlay);
@@ -24,6 +30,9 @@ function init(){
   $.saveList.addEventListener('click', savePlaylistToStorage);
   $.seekbar.addEventListener('input', onSeekSlide);
   $.seekbar.addEventListener('change', onSeekChange);
+
+  // file input fallback for browsers
+  if($.fileInput) $.fileInput.addEventListener('change', handleFileInputChange);
 
   requestStoragePermissions();
   loadSavedPlaylist();
@@ -48,23 +57,59 @@ function requestStoragePermissions(){
 
 // --- File picking ---
 function pickFiles(){
-  // open file chooser multiple times or repeatedly add single file
-  window.fileChooser.open(successUri, err => console.error('file choose err', err));
+  // debug: confirm button click reached
+  console.log('pickFiles clicked');
+  // If Cordova fileChooser plugin is available, use it. Otherwise open hidden file input.
+  if(window.fileChooser && typeof window.fileChooser.open === 'function'){
+    window.fileChooser.open(successUri, err => console.error('file choose err', err));
+  } else {
+    // browser fallback
+    if($.fileInput) $.fileInput.click();
+    else console.warn('No file chooser plugin and no file input available');
+  }
+
   function successUri(uri){
     // resolve native path
-    window.FilePath.resolveNativePath(uri, nativePath => {
-      addToPlaylist(nativePath);
-    }, (e)=> console.error('resolve path err', e));
+    if(window.FilePath && typeof window.FilePath.resolveNativePath === 'function'){
+      window.FilePath.resolveNativePath(uri, nativePath => {
+        addToPlaylist(nativePath);
+      }, (e)=> console.error('resolve path err', e));
+    } else {
+      // If no FilePath resolver, try to use uri directly
+      addToPlaylist(uri);
+    }
   }
 }
 
+function handleFileInputChange(ev){
+  const files = ev.target.files || [];
+  for(let i=0;i<files.length;i++){
+    const f = files[i];
+    addToPlaylist(f);
+  }
+  // reset input so same files can be re-selected later
+  ev.target.value = '';
+}
+
 // --- Playlist management ---
-function addToPlaylist(path){
-  const name = path.split('/').pop();
-  const track = {path, name, title: name, artist:'', album:'', duration:0, art:'assets/placeholder.png'};
+function addToPlaylist(pathOrFile){
+  let path, name, track;
+  // File object from browser input
+  if(pathOrFile && typeof pathOrFile === 'object' && typeof pathOrFile.name === 'string'){
+    const file = pathOrFile;
+    name = file.name;
+    // create blob URL for playback in browser fallback
+    path = URL.createObjectURL(file);
+    track = {path, name, title: name, artist:'', album:'', duration:0, art:'assets/placeholder.jpg', _file: file, temporary: true};
+  } else {
+    path = pathOrFile;
+    name = (''+path).split('/').pop();
+    track = {path, name, title: name, artist:'', album:'', duration:0, art:'assets/placeholder.jpg'};
+  }
   playlist.push(track);
   readTags(track);
-  savePlaylistToStorage(); // persist
+  // persist only non-temporary tracks (files from device path)
+  if(!track.temporary) savePlaylistToStorage();
   updatePlaylistUI();
   if(playlist.length === 1) playIndex(0); // auto play first
 }
@@ -92,7 +137,9 @@ function moveInPlaylist(from, to){
 // --- read tags (jsmediatags) ---
 function readTags(track){
   try{
-    window.jsmediatags.read(track.path, {
+    // jsmediatags can read File objects directly; prefer the File when available
+    const source = track._file ? track._file : track.path;
+    window.jsmediatags.read(source, {
       onSuccess: function(tag){
         const tags = tag.tags;
         if(tags.title) track.title = tags.title;
@@ -276,6 +323,8 @@ function updatePlaylistUI(){
   ul.innerHTML = '';
   playlist.forEach((t, idx) => {
     const li = document.createElement('li');
+    // mark currently playing item for styling
+    if(idx === currentIndex && isPlaying) li.classList.add('playing');
     const left = document.createElement('div');
     left.style.display='flex'; left.style.alignItems='center'; left.style.gap='10px';
     const title = document.createElement('div');
@@ -310,12 +359,12 @@ function updateUI(){
     const t = playlist[currentIndex];
     $.trackTitle.textContent = t.title || t.name;
     $.trackArtist.textContent = t.artist || t.album || '';
-    $.albumArt.src = t.art || 'assets/placeholder.png';
+    $.albumArt.src = t.art || 'assets/placeholder.jpg';
     if(t.duration) $.duration.textContent = formatTime(t.duration);
   } else {
     $.trackTitle.textContent = 'No track playing';
     $.trackArtist.textContent = '—';
-    $.albumArt.src = 'assets/placeholder.png';
+    $.albumArt.src = 'assets/placeholder.jpg';
     $.duration.textContent = '0:00';
   }
 
@@ -323,13 +372,24 @@ function updateUI(){
   $.play.style.display = isPlaying ? 'none' : '';
   $.pause.style.display = isPlaying ? '' : 'none';
 
+  // toggle now-playing animation class
+  const nowEl = document.querySelector('.now-playing');
+  if(nowEl){
+    if(isPlaying) nowEl.classList.add('is-playing');
+    else nowEl.classList.remove('is-playing');
+  }
+
   // repeat text handled earlier
   updatePlaylistUI();
 }
 
 // --- Persistence ---
 function savePlaylistToStorage(){
-  localStorage.setItem('my_music_playlist', JSON.stringify(playlist));
+  // Do not persist temporary (browser-selected) tracks which reference Blob URLs or File objects
+  try{
+    const persist = playlist.filter(t => !t.temporary).map(t => ({ path: t.path, name: t.name, title: t.title, artist: t.artist, album: t.album, duration: t.duration, art: t.art }));
+    localStorage.setItem('my_music_playlist', JSON.stringify(persist));
+  }catch(e){ console.warn('save playlist err', e); }
 }
 
 function loadSavedPlaylist(){
@@ -367,7 +427,7 @@ function setupBackgroundMode(){
     MusicControls.create({
       track       : 'No track playing',
       artist      : '',
-      cover       : 'assets/placeholder.png',
+      cover       : 'assets/placeholder.jpg',
       isPlaying   : false,
       dismissable : true,
       hasPrev : true,
@@ -396,7 +456,7 @@ function showMusicControls(){
   MusicControls.updateMetadata({
     track: t.title || t.name,
     artist: t.artist || '',
-    cover: t.art || 'assets/placeholder.png'
+    cover: t.art || 'assets/placeholder.jpg'
   });
 }
 
@@ -406,9 +466,9 @@ function onControlsError(err){ console.warn('music controls error', err); }
 
 // shorthand DOM elements
 Object.assign(window, {
-  btnPick: $.btnPick, play: $.play, pause: $.pause, next: $.next, prev: $.prev,
-  seekbar: $.seekbar, elapsed: $.elapsed, duration: $.duration,
-  trackTitle: $.trackTitle, trackArtist: $.trackArtist, albumArt: $.albumArt,
-  playlist: $.playlist, emptyHint: $.emptyHint, shuffleBtn: $.shuffle, repeatBtn: $.repeat,
-  saveList: $.saveList
+  btnPick: $['btnPick'], play: $['play'], pause: $['pause'], next: $['next'], prev: $['prev'],
+  seekbar: $['seekbar'], elapsed: $['elapsed'], duration: $['duration'],
+  trackTitle: $['trackTitle'], trackArtist: $['trackArtist'], albumArt: $['albumArt'],
+  playlist: $['playlist'], emptyHint: $['emptyHint'], shuffleBtn: $['shuffle'], repeatBtn: $['repeat'],
+  saveList: $['saveList']
 });

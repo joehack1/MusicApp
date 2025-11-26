@@ -48,6 +48,18 @@
       <p id="emptyHint" class="hint">Tap + Add to pick audio files from your phone.</p>
       <!-- Hidden file input used as a browser fallback when cordova fileChooser is unavailable -->
       <input id="fileInput" type="file" accept="audio/*" multiple style="display:none">
+
+      <!-- Visible browser player (shown when using desktop/browser playback) -->
+      <div id="browserPlayer" class="browser-player" style="display:none">
+        <audio id="browserAudio" preload="metadata" controls></audio>
+        <div class="browser-player-info">
+          <img id="browserPlayerArt" src="assets/placeholder.jpg" alt="Art">
+          <div class="browser-player-meta">
+            <div id="browserPlayerTitle" class="title">No track</div>
+            <div id="browserPlayerArtist" class="artist">—</div>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 

@@ -7,6 +7,8 @@ let timer = null;
 let isPlaying = false;
 let shuffle = false;
 let repeatMode = 0; // 0=off,1=all,2=one
+let browserAudio = null; // HTMLAudioElement fallback for browsers
+let usingHtmlAudio = false;
 
 // `$` will be a map of DOM elements by id (populated on init)
 const $ = {};
@@ -15,9 +17,23 @@ const $ = {};
 document.addEventListener('deviceready', init);
 function init(){
   // cache DOM elements used throughout the app
-  ['btnPick','play','pause','next','prev','shuffle','repeat','saveList','seekbar','elapsed','duration','trackTitle','trackArtist','albumArt','playlist','emptyHint','fileInput'].forEach(id => {
+  ['btnPick','play','pause','next','prev','shuffle','repeat','saveList','seekbar','elapsed','duration','trackTitle','trackArtist','albumArt','playlist','emptyHint','fileInput','browserAudio'].forEach(id => {
     $[id] = document.getElementById(id);
   });
+
+  // also cache the browser player wrapper and metadata elements
+  $['browserPlayer'] = document.getElementById('browserPlayer');
+  $['browserPlayerArt'] = document.getElementById('browserPlayerArt');
+  $['browserPlayerTitle'] = document.getElementById('browserPlayerTitle');
+  $['browserPlayerArtist'] = document.getElementById('browserPlayerArtist');
+
+  // sync HTMLAudio events (when present)
+  const bAudio = $['browserAudio'];
+  if(bAudio){
+    bAudio.addEventListener('play', ()=>{ usingHtmlAudio = true; browserAudio = bAudio; isPlaying = true; updateUI(); startProgressTimer(); });
+    bAudio.addEventListener('pause', ()=>{ isPlaying = false; updateUI(); stopProgressTimer(); });
+    bAudio.addEventListener('ended', ()=>{ onTrackComplete(); });
+  }
 
   // UI bindings
   $.btnPick.addEventListener('click', pickFiles);
@@ -172,27 +188,70 @@ function readTags(track){
 // --- Playback controls ---
 function playIndex(index){
   if(index < 0 || index >= playlist.length) return;
+  const prevIndex = currentIndex;
   currentIndex = index;
-  stopCurrent();
+  // stop previous player and revoke any blob URLs for previous temporary tracks
+  stopCurrent(prevIndex);
   const p = playlist[currentIndex];
-  // create media
-  // On Android, Media accepts native file path
-  media = new Media(p.path,
-    () => { // success = finished playing
-      onTrackComplete();
-    },
-    (err)=> { console.error('media err', err); }
-  );
-  media.play();
+
+  // Decide playback method: prefer Cordova Media plugin on device for native paths
+  if(window.Media && typeof Media === 'function' && !p.temporary && window.cordova){
+    usingHtmlAudio = false;
+    media = new Media(p.path,
+      () => { // success = finished playing
+        onTrackComplete();
+      },
+      (err)=> { console.error('media err', err); }
+    );
+    media.play();
+  } else {
+    // Browser or blob URL fallback using HTMLAudioElement
+    usingHtmlAudio = true;
+    browserAudio = $['browserAudio'] || document.getElementById('browserAudio');
+    if(!browserAudio) browserAudio = document.createElement('audio');
+    browserAudio.src = p.path;
+    browserAudio.preload = 'metadata';
+    browserAudio.onended = onTrackComplete;
+    browserAudio.onloadedmetadata = function(){
+      if(browserAudio.duration && browserAudio.duration > 0){
+        playlist[currentIndex].duration = Math.floor(browserAudio.duration);
+        $.duration.textContent = formatTime(playlist[currentIndex].duration);
+      }
+    };
+    browserAudio.ontimeupdate = function(){
+      const secs = Math.floor(browserAudio.currentTime || 0);
+      $.elapsed.textContent = formatTime(secs);
+      const dur = playlist[currentIndex] ? (playlist[currentIndex].duration || Math.floor(browserAudio.duration || 0)) : 0;
+      if(dur > 0){
+        const percent = Math.min(100, Math.floor((secs / dur) * 100));
+        $.seekbar.value = percent;
+      }
+    };
+    browserAudio.play().catch(e => console.warn('audio play failed', e));
+  }
+
   isPlaying = true;
   startProgressTimer();
   updateUI();
   showMusicControls();
+
+  // show browser player metadata and controls when using HTML audio
+  if(usingHtmlAudio && $['browserPlayer']){
+    $['browserPlayer'].style.display = '';
+    if($['browserPlayerArt']) $['browserPlayerArt'].src = p.art || 'assets/placeholder.jpg';
+    if($['browserPlayerTitle']) $['browserPlayerTitle'].textContent = p.title || p.name;
+    if($['browserPlayerArtist']) $['browserPlayerArtist'].textContent = p.artist || p.album || '';
+    try{ const b = $['browserAudio']; if(b){ b.controls = true; b.style.display = ''; } }catch(e){}
+  }
 }
 
 function onPlay(){
-  if(media) {
-    media.play();
+  if(usingHtmlAudio && browserAudio){
+    browserAudio.play().catch(()=>{});
+    isPlaying = true;
+    startProgressTimer();
+  } else if(media) {
+    try{ media.play(); }catch(e){}
     isPlaying = true;
     startProgressTimer();
   } else {
@@ -202,20 +261,42 @@ function onPlay(){
 }
 
 function onPause(){
-  if(media) {
-    media.pause();
+  if(usingHtmlAudio && browserAudio){
+    try{ browserAudio.pause(); }catch(e){}
+    isPlaying = false;
+    stopProgressTimer();
+  } else if(media) {
+    try{ media.pause(); }catch(e){}
     isPlaying = false;
     stopProgressTimer();
   }
   updateUI();
 }
 
-function stopCurrent(){
+function stopCurrent(prevIndex){
+  if(typeof prevIndex === 'undefined') prevIndex = currentIndex;
+
   if(media){
     try{ media.stop(); }catch(e){}
     try{ media.release(); }catch(e){}
     media = null;
   }
+
+  if(usingHtmlAudio && browserAudio){
+    try{ browserAudio.pause(); }catch(e){}
+    try{ browserAudio.removeAttribute('src'); browserAudio.load(); }catch(e){}
+    // revoke blob URL for previous temporary track if any
+    const prevTrack = playlist[prevIndex];
+    if(prevTrack && prevTrack.temporary && prevTrack.path){
+      try{ URL.revokeObjectURL(prevTrack.path); }catch(e){}
+    }
+    // hide browser player UI
+    try{ if($['browserPlayer']) $['browserPlayer'].style.display = 'none'; }catch(e){}
+    try{ if($['browserAudio']){ $['browserAudio'].controls = false; $['browserAudio'].style.display = 'none'; } }catch(e){}
+    browserAudio = null;
+    usingHtmlAudio = false;
+  }
+
   isPlaying = false;
   stopProgressTimer();
 }
@@ -256,22 +337,34 @@ function onTrackComplete(){
 function startProgressTimer(){
   stopProgressTimer();
   timer = setInterval(()=> {
-    if(!media) return;
-    media.getCurrentPosition((pos)=>{
-      if(pos > -1){
-        // pos is seconds (float)
-        const secs = Math.floor(pos);
-        $.elapsed.textContent = formatTime(secs);
-        // update seekbar
-        // attempt to get duration
-        media.getDuration ? setDurationIfKnown(media.getDuration()) : null;
-        const dur = playlist[currentIndex].duration || 0;
-        if(dur > 0){
-          const percent = Math.min(100, Math.floor((secs / dur) * 100));
-          $.seekbar.value = percent;
-        }
+    if(usingHtmlAudio && browserAudio){
+      const pos = browserAudio.currentTime || 0;
+      const secs = Math.floor(pos);
+      $.elapsed.textContent = formatTime(secs);
+      const dur = playlist[currentIndex] ? (playlist[currentIndex].duration || Math.floor(browserAudio.duration || 0)) : 0;
+      if(dur > 0){
+        const percent = Math.min(100, Math.floor((secs / dur) * 100));
+        $.seekbar.value = percent;
       }
-    }, (e)=>{/*ignore*/});
+      if(browserAudio.duration && browserAudio.duration > 0) setDurationIfKnown(browserAudio.duration);
+    } else {
+      if(!media) return;
+      media.getCurrentPosition((pos)=>{
+        if(pos > -1){
+          // pos is seconds (float)
+          const secs = Math.floor(pos);
+          $.elapsed.textContent = formatTime(secs);
+          // update seekbar
+          // attempt to get duration
+          media.getDuration ? setDurationIfKnown(media.getDuration()) : null;
+          const dur = playlist[currentIndex].duration || 0;
+          if(dur > 0){
+            const percent = Math.min(100, Math.floor((secs / dur) * 100));
+            $.seekbar.value = percent;
+          }
+        }
+      }, (e)=>{/*ignore*/});
+    }
   }, 800);
 }
 
@@ -295,11 +388,12 @@ function onSeekChange(){
   const pct = Number($.seekbar.value);
   const dur = playlist[currentIndex] ? (playlist[currentIndex].duration || 0) : 0;
   const secs = Math.floor((pct/100) * dur);
-  if(media && typeof media.seekTo === 'function'){
+  if(usingHtmlAudio && browserAudio){
+    try{ browserAudio.currentTime = secs; }catch(e){ console.warn('audio seek failed', e); }
+  } else if(media && typeof media.seekTo === 'function'){
     try{ media.seekTo(secs * 1000); }catch(e){ console.warn('seekTo failed', e); }
   } else {
-    // fallback: stop and start at approximate position (may not work)
-    // not implemented further
+    // fallback: nothing available to seek
   }
 }
 

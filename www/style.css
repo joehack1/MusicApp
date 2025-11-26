@@ -116,3 +116,11 @@ h1{margin:0;font-size:20px}
 
 /* highlight currently playing track in playlist */
 #playlist li.playing{box-shadow:0 14px 30px rgba(0,112,201,0.08);border-left:4px solid var(--primary);background:linear-gradient(90deg,#fff,#fcfeff)}
+
+/* Browser player styles */
+.browser-player{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,0.04);background:linear-gradient(180deg,#ffffff,#fbfdff);box-shadow:0 8px 20px rgba(16,24,40,0.04);margin-top:12px}
+.browser-player audio{flex:1}
+.browser-player-info{display:flex;align-items:center;gap:10px;margin-left:8px}
+.browser-player-info img{width:60px;height:60px;border-radius:8px;object-fit:cover}
+.browser-player-meta .title{font-size:14px;font-weight:600}
+.browser-player-meta .artist{font-size:12px;color:var(--muted)}

@@ -26,6 +26,8 @@ function init(){
   $['browserPlayerArt'] = document.getElementById('browserPlayerArt');
   $['browserPlayerTitle'] = document.getElementById('browserPlayerTitle');
   $['browserPlayerArtist'] = document.getElementById('browserPlayerArtist');
+  $['browserPlayerShimmer'] = document.getElementById('browserPlayerShimmer');
+  $['browserVisualizer'] = document.getElementById('browserVisualizer');
 
   // sync HTMLAudio events (when present)
   const bAudio = $['browserAudio'];
@@ -34,6 +36,13 @@ function init(){
     bAudio.addEventListener('pause', ()=>{ isPlaying = false; updateUI(); stopProgressTimer(); });
     bAudio.addEventListener('ended', ()=>{ onTrackComplete(); });
   }
+
+  // visualizer state
+  window._audioCtx = window._audioCtx || null;
+  window._analyser = window._analyser || null;
+  window._vizSource = window._vizSource || null;
+  window._vizData = window._vizData || null;
+  window._vizAnim = window._vizAnim || null;
 
   // UI bindings
   $.btnPick.addEventListener('click', pickFiles);
@@ -153,6 +162,9 @@ function moveInPlaylist(from, to){
 // --- read tags (jsmediatags) ---
 function readTags(track){
   try{
+    // indicate loading for UI
+    track.loading = true;
+    updatePlaylistUI();
     // jsmediatags can read File objects directly; prefer the File when available
     const source = track._file ? track._file : track.path;
     window.jsmediatags.read(source, {
@@ -172,16 +184,19 @@ function readTags(track){
           const base64 = btoa(base64String);
           track.art = "data:"+format+";base64,"+base64;
         }
+        track.loading = false;
         updatePlaylistUI();
       },
       onError: function(error){
         // tag reading may fail for some file types; ignore
-        // console.log('tag error', error);
+        track.loading = false;
+        updatePlaylistUI();
       }
     });
   }catch(e){
     // jsmediatags may fail on native path formats; ignore
-    // console.warn(e);
+    track.loading = false;
+    updatePlaylistUI();
   }
 }
 
@@ -243,6 +258,66 @@ function playIndex(index){
     if($['browserPlayerArtist']) $['browserPlayerArtist'].textContent = p.artist || p.album || '';
     try{ const b = $['browserAudio']; if(b){ b.controls = true; b.style.display = ''; } }catch(e){}
   }
+
+  // show shimmer while tags load for current track
+  if($['browserPlayerShimmer']){
+    if(p.loading) $['browserPlayerShimmer'].style.display = '';
+    else $['browserPlayerShimmer'].style.display = 'none';
+  }
+
+  // start visualizer when using HTMLAudio
+  if(usingHtmlAudio){
+    startVisualizer();
+  }
+}
+
+function startVisualizer(){
+  try{
+    if(!usingHtmlAudio || !($['browserAudio'])) return;
+    const canvas = $['browserVisualizer'];
+    if(!canvas) return;
+    if(!window._audioCtx){
+      window._audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const audioCtx = window._audioCtx;
+    if(window._vizSource) try{ window._vizSource.disconnect(); }catch(e){}
+    window._vizSource = audioCtx.createMediaElementSource($['browserAudio']);
+    window._analyser = audioCtx.createAnalyser();
+    window._analyser.fftSize = 256;
+    const source = window._vizSource;
+    source.connect(window._analyser);
+    window._analyser.connect(audioCtx.destination);
+    window._vizData = new Uint8Array(window._analyser.frequencyBinCount);
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width; const h = canvas.height;
+    function draw(){
+      window._vizAnim = requestAnimationFrame(draw);
+      window._analyser.getByteFrequencyData(window._vizData);
+      ctx.clearRect(0,0,w,h);
+      const barWidth = (w / window._vizData.length) * 1.5;
+      let x = 0;
+      for(let i=0;i<window._vizData.length;i+=4){
+        const v = window._vizData[i] / 255;
+        const barH = v * h * 0.85;
+        ctx.fillStyle = 'rgba(0,112,201,'+(0.4 + v*0.6)+')';
+        ctx.fillRect(x, h - barH, barWidth, barH);
+        x += barWidth + 1;
+      }
+    }
+    if(window._vizAnim) cancelAnimationFrame(window._vizAnim);
+    draw();
+  }catch(e){ console.warn('visualizer init failed', e); }
+}
+
+function stopVisualizer(){
+  try{
+    if(window._vizAnim) cancelAnimationFrame(window._vizAnim);
+    if(window._vizSource) try{ window._vizSource.disconnect(); }catch(e){}
+    if(window._analyser) try{ window._analyser.disconnect(); }catch(e){}
+    window._vizAnim = null; window._vizSource = null; window._analyser = null; window._vizData = null;
+    const canvas = $['browserVisualizer']; if(canvas){ const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
+  }catch(e){/* ignore */}
 }
 
 function onPlay(){
@@ -295,6 +370,7 @@ function stopCurrent(prevIndex){
     try{ if($['browserAudio']){ $['browserAudio'].controls = false; $['browserAudio'].style.display = 'none'; } }catch(e){}
     browserAudio = null;
     usingHtmlAudio = false;
+    stopVisualizer();
   }
 
   isPlaying = false;
@@ -417,6 +493,11 @@ function updatePlaylistUI(){
   ul.innerHTML = '';
   playlist.forEach((t, idx) => {
     const li = document.createElement('li');
+    // show loading shimmer small badge
+    const badge = document.createElement('span');
+    badge.className = 'loading-badge';
+    badge.style.display = (t.loading ? '' : 'none');
+    badge.textContent = '';
     // mark currently playing item for styling
     if(idx === currentIndex && isPlaying) li.classList.add('playing');
     const left = document.createElement('div');
@@ -424,6 +505,7 @@ function updatePlaylistUI(){
     const title = document.createElement('div');
     title.className='track-name';
     title.textContent = t.title || t.name;
+    title.appendChild(badge);
     left.appendChild(title);
 
     const actions = document.createElement('div');
